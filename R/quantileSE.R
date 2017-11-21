@@ -19,6 +19,11 @@
 #'        955, 968, 1000, 1245, 1271, 1420, 1551, 1694, 2363, 2754, 2950)
 #' c1 <- c(rep(1, 43), 0, 0)
 #' quantileSE(timevar = t1, censor = c1, q = 0.5, B = 500)
+#' @export
+#' @import survival
+#' @importFrom graphics legend lines plot
+#' @importFrom stats pnorm qnorm quantile sd
+#'
 quantileSE <- function(timevar, censor, q = .5, B = 1000, alpha = 0.05, seed = 1991, plots = FALSE) {
 
   #- Checking for silly errors

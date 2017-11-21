@@ -35,7 +35,11 @@
 #' Chakraborti, S., and Mukerjee, R. (1989), "A Confidence Interval for a Measure Associated With the Comparison of a Treatment With a Control," South African Statistical Journal, 23, 219-230.
 #'
 #' Gastwirth, J. L., and Wang, J. L. (1988), "Control Percentile Test for Censored Data," Journal of Statistical Planning and Inference, 18, 267-276.
-
+#' @export
+#' @import survival
+#' @importFrom graphics legend lines plot
+#' @importFrom stats pnorm qnorm quantile sd
+#'
 quantileControlTest <- function(timevar1, censor1, timevar2, censor2, q = 0.5, B = 1000, seed = 1234, plots = FALSE) {
 
   #- Checking for silly errors
