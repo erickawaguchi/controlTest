@@ -1,13 +1,15 @@
-#' Find standard error for survival quantile
+#' Supremum-type test for two-sample comparison of survival quantiles.
 #'
 #' @param timevar1 Vector of observed survival times for sample 1 (control).
 #' @param censor1  Vector of censoring indicators for sample 1 (1 = uncensored, 0 = censored).
 #' @param timevar2 Vector of observed survival times for sample 2 (treatment).
 #' @param censor2  Vector of censoring indicators for sample 2 (1 = uncensored, 0 = censored).
-#' @param q        Quantile of interest (in terms of CDF). Default is median.
-#' @param B        Number of bootstrap samples.
-#' @param seed     Seed number (for reproducibility).
-#' @param plots    Logical. TRUE to show plot of cumulative distribution functions.
+#' @param q.min    Smallest quantile (in terms of CDF) to test. Default is the time to earliest event for sample 1.
+#' @param q.max    Largest quantile (in terms of CDF) to test.
+#' @param gridpts Number of grid points between q.min and q.max to test.
+#' @param B       Number of bootstrap samples.
+#' @param seed    Seed number (for reproducibility).
+#' @param plots   Logical. TRUE to show plot of cumulative distribution functions.
 #' @return Returns quantile estimate, bootstrapped standard error, test statistic, and two-sided p-value.
 #' @examples
 #' #Reference: Survival Analysis Techniques for Censored and Truncated Data.
@@ -24,7 +26,7 @@
 #'        2412, 2486, 2796, 2802, 2934, 2988)
 #' c1 <- c(rep(1, 43), 0, 0)
 #' c2 <- c(rep(1, 39), rep(0, 6))
-#' quantileControlTest(t1, c1, t2, c2, q = 0.5, B = 500)
+#' supControlTest(t1, c1, t2, c2, q.max = 0.5, B = 500)
 #'
 #'@details It is important to note the possiblilty that the estimated quantile may not be estimable in our bootstrap samples. In such cases
 #' the largest observed survival time will be considered as an estimate for the quantile.
@@ -40,11 +42,14 @@
 #' @importFrom graphics legend lines plot
 #' @importFrom stats pnorm qnorm quantile sd stepfun
 #'
-quantileControlTest <- function(timevar1, censor1, timevar2, censor2, q = 0.5, B = 1000, seed = 1234, plots = FALSE) {
+supControlTest <- function(timevar1, censor1, timevar2, censor2, q.min = NULL, q.max = 0.5, gridpts = 50, B = 500, seed = 1234, plots = FALSE) {
 
   #- Checking for silly errors
-  if (q < 0 | q > 1 ) {
-    stop("q should be between 0 and 1.")
+  if (q.max < 0 | q.max > 1 ) {
+    stop("q.max should be between 0 and 1.")
+  }
+  if (gridpts < 1) {
+    stop("gridpts should be an integer larger than 0.")
   }
   if (B <= 0) {
     stop("B should be a positive integer")
@@ -60,66 +65,41 @@ quantileControlTest <- function(timevar1, censor1, timevar2, censor2, q = 0.5, B
   }
 
   set.seed(seed)
-  fit1 <- survfit(Surv(timevar1, censor1) ~ 1, conf.type = "none")
-  fit2 <- survfit(Surv(timevar2, censor2) ~ 1, conf.type = "none")
-  F1.inv <- unname(quantile(fit1, prob = q)) #Quantile in terms of CDF
-  F2.inv <- unname(quantile(fit2, prob = q)) #Quantile in terms of CDF
+  fit1  <- survfit(Surv(timevar1, censor1) ~ 1, conf.type = "none")
+  fit2  <- survfit(Surv(timevar2, censor2) ~ 1, conf.type = "none")
+  q.min <- min(1 - fit1$surv[fit1$n.censor == 0]) #Get first observed survival time
 
-  # If quantiles do not exist for both samples
-  if(is.na(F1.inv)) {
-    stop(paste0("Estimate of ", round(q*100, 2), "-th quantile for sample 1 (control) not found. Program Stopped."))
-  } else if(is.na(F2.inv)) {
-    stop(paste0("Estimate of ", round(q*100, 2), "-th quantile for sample 2 (treatment) not found. Program Stopped."))
+  if (q.max < q.min) {
+    stop("Choose larger value for q.max.")
   }
 
-  # Calculate F2(F1.inv(p))
-  Qp <- function(t1, c1, t2, c2) {
-    fit1 <- survfit(Surv(t1, c1) ~ 1, conf.type = "none")
-    fit2 <- survfit(Surv(t2, c2) ~ 1, conf.type = "none")
-    F1.inv <- unname(quantile(fit1, prob = q)) #F1.inv(p)
-    if (is.na(F1.inv)) {
-      warning(paste0("Estimate of ", round(q*100, 2), "-th quantile could not be calculated for bootstrap sample. Largest observed survival time was used instead."))
-      F1.inv <- max(t1)
-    }
-    F2  <- stepfun(fit2$time, c(0, 1 - fit2$surv)) #CDF of F2
-    out <- F2(F1.inv) #F2(F1.inv(p))
-    return(out)
+  q.seq <- sort(seq(q.min, q.max, length = gridpts), decreasing = TRUE) #Discretize the quantiles
+
+  test.stat <- numeric(length(q.seq))
+  test.pval <- numeric(length(q.seq))
+
+  for(j in 1:length(q.seq)) {
+    fit <- quantileControlTest(timevar1, censor1, timevar2, censor2,
+                               q = q.seq[j], B = B, plot = FALSE)
+    test.stat[j] <- abs(fit$Z)
+    test.pval[j] <- fit$pval
   }
-
-  Q <- Qp(timevar1, censor1, timevar2, censor2)
-
-  # Bootstrap
-  b.est <- numeric(B)
-  for (i in 1:B) {
-    boot1    <- sample(1:length(timevar1), replace = TRUE)
-    t1.boot  <- timevar1[boot1]
-    c1.boot  <- censor1[boot1]
-    boot2    <- sample(1:length(timevar2), replace = TRUE)
-    t2.boot  <- timevar2[boot2]
-    c2.boot  <- censor2[boot2]
-    b.est[i] <- Qp(t1.boot, c1.boot, t2.boot, c2.boot)
-  }
-
-  se   <- sd(b.est)
-  Z    <- (Q - (1 - q)) / se
-  pval <- 2 * (1 - pnorm(abs(Z)))
 
   #- Plots
   if (plots == TRUE) {
     plot( (1 - fit1$surv) ~ fit1$time, col = "red", type = "s", ylab = "F(x)",
-          xlab = "Time", main = "Estimated CDF for Control and Trt. Group")
+         xlab = "Time", main = "Estimated CDF for Control and Trt. Group")
     lines((1 - fit2$surv) ~ fit2$time, type = "s", lty = 2, col = "blue")
     legend("bottomright", c("CDF Estimate for Control Group", "CDF Estimate for Trt. Group"),
            lty = c(1, 2), col = c("red", "blue"), bty = "n", cex = 0.8)
   }
 
   out <- list()
-  out$cdf_quantile <- round(q, 2)
-  out$sample1      <- F1.inv
-  out$sample2      <- F2.inv
-  out$Z            <- Z
-  out$se           <- se
-  out$pval         <- round(pval, 3)
-  out$B            <- B
+  dat <- data.frame(cdf_quantile = round(q.seq, 3),
+                    Z = round(abs(test.stat), 3),
+                    pval = round(test.pval, 4))
+  out$Z        <- max(dat$Z)
+  out$pval     <- dat$pval[which.max(dat$Z)]
+  out$results  <- dat
   return(out)
 }

@@ -42,7 +42,7 @@ quantileSE <- function(timevar, censor, q = .5, B = 1000, alpha = 0.05, seed = 1
 
   set.seed(seed)
   fit      <- survfit(Surv(timevar, censor) ~ 1, conf.type = 'none') # Control
-  q.est    <- unname(quantile(fit, prob = 1 - q))
+  q.est    <- unname(quantile(fit, prob = 1 - q)) #Gives quantile in terms of survival function
   if(is.na(q.est)){
     stop(paste("Estimated survival time for ", q*100, "th quantile was not found. Program Stopped."))
   }
